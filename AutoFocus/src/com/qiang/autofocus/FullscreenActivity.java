@@ -1,5 +1,12 @@
 package com.qiang.autofocus;
 
+import org.opencv.android.BaseLoaderCallback;
+import org.opencv.android.CameraBridgeViewBase;
+import org.opencv.android.LoaderCallbackInterface;
+import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener;
+import org.opencv.android.OpenCVLoader;
+import org.opencv.core.Mat;
+
 import com.qiang.autofocus.util.SystemUiHider;
 
 import android.annotation.TargetApi;
@@ -7,6 +14,7 @@ import android.app.Activity;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -16,7 +24,32 @@ import android.view.View;
  * 
  * @see SystemUiHider
  */
-public class FullscreenActivity extends Activity {
+public class FullscreenActivity extends Activity implements CvCameraViewListener, View.OnTouchListener{
+    private CameraBridgeViewBase mOpenCvCameraView;
+    private static final String  TAG = "Qiang::AutoFocus::Activity";
+	/**
+	 * async connect to opencv manager
+	 */
+	private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
+
+        @Override
+        public void onManagerConnected(int status) {
+            switch (status) {
+                case LoaderCallbackInterface.SUCCESS:
+                {
+                    Log.i(TAG, "OpenCV loaded successfully");
+
+                    /* Now enable camera view to start receiving frames */
+                    mOpenCvCameraView.setOnTouchListener(FullscreenActivity.this);
+                    mOpenCvCameraView.enableView();
+                } break;
+                default:
+                {
+                    super.onManagerConnected(status);
+                } break;
+            }
+        }
+    };
 	/**
 	 * Whether or not the system UI should be auto-hidden after
 	 * {@link #AUTO_HIDE_DELAY_MILLIS} milliseconds.
@@ -159,4 +192,49 @@ public class FullscreenActivity extends Activity {
 		mHideHandler.removeCallbacks(mHideRunnable);
 		mHideHandler.postDelayed(mHideRunnable, delayMillis);
 	}
+
+	@Override
+	public boolean onTouch(View arg0, MotionEvent arg1) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public void onCameraViewStarted(int width, int height) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void onCameraViewStopped() {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public Mat onCameraFrame(Mat inputFrame) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+	
+	@Override
+	public void onResume()
+	{
+	    super.onResume();
+	    OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_2_4_6, this, mLoaderCallback);
+	}
+	
+	@Override
+	 public void onPause()
+	 {
+	     super.onPause();
+	     if (mOpenCvCameraView != null)
+	         mOpenCvCameraView.disableView();
+	 }
+
+	 public void onDestroy() {
+	     super.onDestroy();
+	     if (mOpenCvCameraView != null)
+	         mOpenCvCameraView.disableView();
+	 }
 }
