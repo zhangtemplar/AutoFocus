@@ -7,8 +7,11 @@ import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Rect;
+import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
+
+import android.util.Log;
 
 /**
  * this class implements the image signature for computing a saliency map from a given image
@@ -17,6 +20,7 @@ import org.opencv.imgproc.Imgproc;
  */
 public class ImageSignature
 {
+	private static final String  TAG = "Qiang::AutoFocus::ImageSignature";
     // the size of frame
     private int row, col;
     // the saliency map
@@ -30,10 +34,86 @@ public class ImageSignature
     // the converted opponent
     private List<Mat> opponent;
     // the Fourier coefficient
-    private Mat coef;
+/*    private Mat coef;
     private List<Mat> coef_complex;
     private Mat mag;
-    private Mat signature;
+    private Mat signature;*/
+    // for the algorithm
+    private List<ImageSignatureCore> algorithm;
+    private List<Thread> thread;
+    
+    private final int number_thread=3;
+    
+    /**
+     * pack the core algorithm part of image signature into inner class
+     * we want to make it mult-threadable
+     * @author qzhang53
+     *
+     */
+    class ImageSignatureCore implements Runnable
+    {
+        // the Fourier coefficient
+        private Mat coef;
+        private List<Mat> coef_complex;
+        private Mat mag;
+        private Mat signature;
+        private Mat img;
+        private Mat sal;
+
+        public ImageSignatureCore(int r, int c)
+        {
+        	img=null;
+    		coef=new Mat(row, col, CvType.CV_32FC2);
+    		coef_complex=new ArrayList<Mat>(2);
+    		mag=new Mat(row, col,CvType.CV_32F);
+    		signature=new Mat(row, col,CvType.CV_32FC2);		
+        }
+        
+        public void set(Mat input, Mat output)
+        {
+        	img=input;
+        	sal=output;
+        }
+        
+        @Deprecated
+        public Mat get()
+        {
+        	return mag;
+        }
+        
+        public void compute()
+        {
+			// forward dft
+			Core.dft(img,coef,Core.DFT_COMPLEX_OUTPUT,img.rows());
+			// unify the magnitude
+			
+			Core.split(coef,coef_complex);
+			
+			Core.magnitude(coef_complex.get(0), coef_complex.get(1), mag);
+			Core.divide(coef_complex.get(0),mag,coef_complex.get(0));
+			Core.divide(coef_complex.get(1),mag,coef_complex.get(1));
+			Core.merge(coef_complex, coef);
+			// apply the inverse dft
+			
+			Core.dft(coef,signature,Core.DCT_INVERSE,img.rows());
+			// take square and magnitude
+			Core.split(signature, coef_complex);
+			Core.magnitude(coef_complex.get(0), coef_complex.get(1), mag);
+			Core.multiply(mag, mag, mag);		
+			
+			// add this to the result
+			Core.add(sal, mag, sal);        	
+        }
+        
+		@Override
+		public void run() {
+			// TODO Auto-generated method stub
+			Log.i(TAG, "run");
+			compute();
+		}
+    	
+    }
+    
 	
     /**
      * constructor which takes the size of image (r,c) as input
@@ -59,15 +139,20 @@ public class ImageSignature
      	opponent.add(new Mat(row, col, CvType.CV_32FC1));
      	opponent.add(new Mat(row, col, CvType.CV_32FC1));
      	opponent.add(new Mat(row, col, CvType.CV_32FC1));
-		coef=new Mat(row, col, CvType.CV_32FC2);
-		coef_complex=new ArrayList<Mat>(2);
-		mag=new Mat(row, col,CvType.CV_32F);
-		signature=new Mat(row, col,CvType.CV_32FC2);		
+     	
+     	algorithm=new ArrayList<ImageSignatureCore>(3);
+     	for (int i=0; i<3; i++)
+     	{
+     		algorithm.add(new ImageSignatureCore(r, c));
+     	}
+     	
+     	thread=new ArrayList<Thread>(3);
 	}
 	
 	/**
 	 * compute the saliency map for the given image
 	 * @param img
+	 * @throws InterruptedException 
 	 */
 	public void computeSaliency(Mat img)
 	{
@@ -76,13 +161,27 @@ public class ImageSignature
 		Core.split(img, rgb);
 		// convert the opponent color space
 		rgb2opponent(rgb.get(0),rgb.get(1),rgb.get(2), opponent);
-		// apply the image signature on each channel
-		imageSignature(opponent.get(0),mag,coef,coef_complex,signature);
-		Core.add(sal,mag,sal);
-		imageSignature(opponent.get(1),mag,coef,coef_complex,signature);
-		Core.add(sal,mag,sal);
-		imageSignature(opponent.get(2),mag,coef,coef_complex,signature);
-		Core.add(sal,mag,sal);		
+		// clear the saliency map
+		sal.setTo(new Scalar(0));
+		thread.clear();
+		for (int i=0; i<3; i++)
+		{
+			algorithm.get(i).set(opponent.get(i), sal);
+			// error: each thread instance can only be started once
+			// algorithm.get(i).start();
+			thread.add(new Thread(algorithm.get(i)));
+			thread.get(i).start();
+		}
+		// wait them to finish
+		for (int i=0; i<thread.size(); i++)
+		{
+			try {
+				thread.get(i).join();
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				Log.i(TAG, "thread for image signature is interrupted");
+			}
+		}
 	}
 	
 	/**
@@ -92,6 +191,17 @@ public class ImageSignature
 	public void getSaliencyMap(Mat sal)
 	{
 		this.sal.copyTo(sal);
+	}
+	
+	/**
+	 * return the current saliency map instead of copy.
+	 * However it is dangerous, as it can be changed out of this function
+	 * @return
+	 */
+	@Deprecated
+	public Mat getSaliency()
+	{
+		return sal;
 	}
 	
 	/**
@@ -142,31 +252,5 @@ public class ImageSignature
 		Core.subtract(opponent.get(3), opponent.get(4), opponent.get(1));
 		Core.subtract(opponent.get(5),opponent.get(0),opponent.get(2));
 		Core.add(opponent.get(3),opponent.get(0),opponent.get(0));
-	}
-	
-	/**
-	 * this function compute the saliency map with image signature
-	 * @param img
-	 * @return
-	 */
-	private void imageSignature(Mat img, Mat mag, Mat coef, List<Mat> coef_complex, Mat signature)
-	{
-		// forward dft
-		Core.dft(img,coef,Core.DFT_COMPLEX_OUTPUT,img.rows());
-		// unify the magnitude
-		
-		Core.split(coef,coef_complex);
-		
-		Core.magnitude(coef_complex.get(0), coef_complex.get(1), mag);
-		Core.divide(coef_complex.get(0),mag,coef_complex.get(0));
-		Core.divide(coef_complex.get(1),mag,coef_complex.get(1));
-		Core.merge(coef_complex, coef);
-		// apply the inverse dft
-		
-		Core.dft(coef,signature,Core.DCT_INVERSE,img.rows());
-		// take square and magnitude
-		Core.split(signature, coef_complex);
-		Core.magnitude(coef_complex.get(0), coef_complex.get(1), mag);
-		Core.multiply(mag, mag, mag);
 	}
 }

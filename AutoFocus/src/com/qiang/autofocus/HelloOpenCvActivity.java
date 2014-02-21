@@ -36,7 +36,7 @@ import android.view.WindowManager;
 
 @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
 public class HelloOpenCvActivity extends Activity implements CvCameraViewListener2{
-	private static final String  TAG = "Sample::Puzzle15::Activity";
+	private static final String  TAG = "Qiang::AutoFocus::Activity";
 
     private CameraBridgeViewBase mOpenCvCameraView;
     
