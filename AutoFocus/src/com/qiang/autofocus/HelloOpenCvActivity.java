@@ -1,10 +1,10 @@
 package com.qiang.autofocus;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
+import java.util.ListIterator;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame;
@@ -13,35 +13,34 @@ import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Mat;
 import org.opencv.core.Core;
-import org.opencv.core.CvType;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
-import org.opencv.imgproc.Imgproc;
-import org.opencv.android.CameraBridgeViewBase;
-import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener;
-import org.opencv.android.JavaCameraView;
 
 import android.hardware.Camera;
-import android.hardware.Camera.Parameters;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.content.res.Configuration;
 import android.util.Log;
 import android.view.Menu;
+import android.view.MenuItem;
+import android.view.MotionEvent;
+import android.view.SubMenu;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.View.OnTouchListener;
 import android.view.WindowManager;
+import android.widget.Toast;
 
 @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
-public class HelloOpenCvActivity extends Activity implements CvCameraViewListener2{
+public class HelloOpenCvActivity extends Activity implements CvCameraViewListener2, OnTouchListener{
 	private static final String  TAG = "Qiang::AutoFocus::Activity";
 
-    private CameraBridgeViewBase mOpenCvCameraView;
-    
-    // for control the hardware camera, e.g., focus
-    private Camera camera;
+    private AutoFocusView mOpenCvCameraView;
     
     // the saliency detector
     private ImageSignature mImageSignature;
@@ -54,6 +53,14 @@ public class HelloOpenCvActivity extends Activity implements CvCameraViewListene
     
     // location of salient object;
     private Rect win;
+    
+    private List<Camera.Size> preview_size;
+    private List<Size> focus_size;
+    
+    private MenuItem[] mPreviewMenuItems;
+    private SubMenu mPreviewSizeMenu;
+    private MenuItem[] mFocusMenuItems;
+    private SubMenu mFocusSizeMenu;
     
     /**
      * those parameters are for computing the saliency map and check the focus region
@@ -74,25 +81,26 @@ public class HelloOpenCvActivity extends Activity implements CvCameraViewListene
 	           	     * initialize
 	           	     */
                     // for the preview size, we need to query the hardware for the list of available size
-                    Camera.Parameters params=camera.getParameters();
-                    List<Camera.Size> preview_size=params.getSupportedPreviewSizes();
-                    Collections.sort(preview_size, new CameraSizeComparator());
-                    row=preview_size.get(0).height;
-                    col=preview_size.get(0).width;
-                    camera.release();
+                    preview_size=mOpenCvCameraView.getPreviewSize();
                     
-	           	    /*row=240;
-	           	    col=320;*/
-	           	    win_size=new Size(32,32);
-	           	     
-	           	    mImageSignature=new ImageSignature(row, col);
+                    focus_size = new ArrayList<Size>();
+                    focus_size.add(new Size(16, 16));
+                    focus_size.add(new Size(24, 24));
+                    focus_size.add(new Size(32, 32));
+                    focus_size.add(new Size(48, 48));
+                    focus_size.add(new Size(64, 64));
+                    focus_size.add(new Size(96, 96));
+                    focus_size.add(new Size(128, 128));
+	           	    win_size=focus_size.get(2);
 	           	     
 	           	    win=new Rect();
+                    
+                    setPreviewSize(preview_size.get(0));
+                    
+                    // mOpenCvCameraView.enableView();
 
                     /* Now enable camera view to start receiving frames */
-                    // mOpenCvCameraView.setOnTouchListener(HelloOpenCvActivity.this);
-	        		mOpenCvCameraView.setMaxFrameSize(col, row);
-                    mOpenCvCameraView.enableView();
+                    mOpenCvCameraView.setOnTouchListener(HelloOpenCvActivity.this);
                 } break;
                 default:
                 {
@@ -111,20 +119,11 @@ public class HelloOpenCvActivity extends Activity implements CvCameraViewListene
 		getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 		setContentView(R.layout.helloopencvlayout);
 		 
-		mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.HelloOpenCvView);
+		mOpenCvCameraView = (AutoFocusView) findViewById(R.id.HelloOpenCvView);
 		mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
 		mOpenCvCameraView.setCvCameraViewListener(this);
 		
-		camera=Camera.open();
-		
 	     
-	}
-
-	@Override
-	public boolean onCreateOptionsMenu(Menu menu) {
-		// Inflate the menu; this adds items to the action bar if it is present.
-		getMenuInflater().inflate(R.menu.helloopencvlayout, menu);
-		return true;
 	}
 
 	@Override
@@ -141,7 +140,7 @@ public class HelloOpenCvActivity extends Activity implements CvCameraViewListene
 		// grab a frame
 		Mat img=inputFrame.rgba();
 		// the image is up-down flipped
-		Core.flip(img, img, -1);
+		// Core.flip(img, img, -1);
 		// compute the saliency map
 		mImageSignature.computeSaliency(img);
 		mImageSignature.getSaliencyObject(win_size, win);
@@ -164,49 +163,117 @@ public class HelloOpenCvActivity extends Activity implements CvCameraViewListene
 	}
 	
 	@Override
-	 public void onPause()
-	 {
-	     super.onPause();
-	     if (mOpenCvCameraView != null)
-	         mOpenCvCameraView.disableView();
-	 }
-
-	 public void onDestroy() {
-	     super.onDestroy();
-	     if (mOpenCvCameraView != null)
-	         mOpenCvCameraView.disableView();
-	 }
-	 
-	 /**
-	  * function for manually select the focus region
-	  * @param tfocusRect
-	  */
-	 public void touchFocus(final Rect tfocusRect)
-	 {
-    	camera.stopFaceDetection();
-		
-    	//Convert from View's width and height to +/- 1000
-		final android.graphics.Rect targetFocusRect = new android.graphics.Rect(
-			tfocusRect.x * 2000/col - 1000,
-			tfocusRect.y * 2000/row - 1000,
-			(tfocusRect.x+tfocusRect.width) * 2000/row - 1000,
-			(tfocusRect.y+tfocusRect.height) * 2000/col - 1000);
-		
-		final List<Camera.Area> focusList = new ArrayList<Camera.Area>();
-		Camera.Area focusArea = new Camera.Area(targetFocusRect, 1000);
-		focusList.add(focusArea);
-		
-		Parameters para = camera.getParameters();
-		para.setFocusAreas(focusList);
-		para.setMeteringAreas(focusList);
-		camera.setParameters(para);
-    }
-}
-
-class CameraSizeComparator implements Comparator<Camera.Size>
-{
-	public int compare(Camera.Size a, Camera.Size b)
+	public void onPause()
 	{
-		return a.width-b.width;
+	    super.onPause();
+	    if (mOpenCvCameraView != null)
+	        mOpenCvCameraView.disableView();
 	}
+	
+	public void onDestroy() {
+	    super.onDestroy();
+	    if (mOpenCvCameraView != null)
+	        mOpenCvCameraView.disableView();
+	}
+
+	/**
+	 * response to the touch event
+	 * on touch, we do the following three work
+	 * 	change the focus window
+	 * 	save the current image and the focus location
+	 */
+	@SuppressLint("SimpleDateFormat")
+	@Override
+	public boolean onTouch(View arg0, MotionEvent arg1) {
+		// TODO Auto-generated method stub
+		Log.i(TAG,"onTouch event");
+		// we may need to the event type
+		
+	    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
+	    String currentDateandTime = sdf.format(new Date());
+	    String fileName = Environment.getExternalStorageDirectory().getPath() +
+	                           "/sample_picture_" + currentDateandTime;
+	    Rect rect=new Rect((int)arg1.getX(), (int)arg1.getY(), (int)win_size.width, (int)win_size.height);
+	    // mOpenCvCameraView.touchFocus(rect, col, row);
+	    mOpenCvCameraView.takePicture(fileName, rect);
+	    Toast.makeText(this, fileName + " saved", Toast.LENGTH_SHORT).show();
+		return false;
+	}
+	
+	/**
+	 * create the menu for preview size and focus size
+	 */
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+
+        mPreviewSizeMenu = menu.addSubMenu("Preview Size");
+        mPreviewMenuItems = new MenuItem[preview_size.size()];
+
+        int idx = 0;
+        for (Camera.Size sz: preview_size)
+        {
+        	String element = new String(sz.width+"x"+sz.height);
+            mPreviewMenuItems[idx] = mPreviewSizeMenu.add(1, idx, Menu.NONE, element);
+            idx++;
+        }
+
+        mFocusSizeMenu = menu.addSubMenu("Focus Size");
+        mFocusMenuItems = new MenuItem[focus_size.size()];
+
+        idx = 0;
+        for (Size sz: focus_size)
+        {
+        	mFocusMenuItems[idx] = mFocusSizeMenu.add(2, idx, Menu.NONE,
+                    Integer.valueOf((int) sz.width).toString() + "x" + Integer.valueOf((int) sz.height).toString());
+            idx++;
+        }
+
+        return true;
+    }
+    
+    /**
+     * when an menu item is selected
+     */
+    public boolean onOptionsItemSelected(MenuItem item) {
+        Log.i(TAG, "called onOptionsItemSelected; selected item: " + item);
+        int id = item.getItemId();
+        if (item.getGroupId() == 1)
+        {
+            setPreviewSize(preview_size.get(id));
+            Toast.makeText(this, new String(preview_size.get(id).width+"x"+preview_size.get(id).height), Toast.LENGTH_SHORT).show();
+        }
+        else if (item.getGroupId() == 2)
+        {
+        	win_size=focus_size.get(id);
+            Toast.makeText(this, new String(win_size.width+"x"+win_size.height), Toast.LENGTH_SHORT).show();
+        }
+
+        return true;
+    }
+    
+    /**
+     * update the preview size
+     * when need to create a new image signature component
+     * @param sz
+     */
+    public void setPreviewSize(Camera.Size sz)
+    {
+    	if (mOpenCvCameraView != null)
+    	{
+	        mOpenCvCameraView.disableView();
+    	}
+    	
+    	row=sz.height;
+        col=sz.width;
+        mImageSignature=new ImageSignature(row, col);
+        mOpenCvCameraView.setMaxFrameSize(col, row);
+        
+    	mOpenCvCameraView.enableView();
+    }
+    
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+      // ignore orientation/keyboard change
+      super.onConfigurationChanged(newConfig);
+    }
 }

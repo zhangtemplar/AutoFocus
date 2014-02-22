@@ -42,8 +42,6 @@ public class ImageSignature
     private List<ImageSignatureCore> algorithm;
     private List<Thread> thread;
     
-    private final int number_thread=3;
-    
     /**
      * pack the core algorithm part of image signature into inner class
      * we want to make it mult-threadable

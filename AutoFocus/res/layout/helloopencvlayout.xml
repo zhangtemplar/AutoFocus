@@ -5,12 +5,9 @@
     android:layout_height="wrap_content"
     android:orientation="vertical" >
 
-    <org.opencv.android.JavaCameraView
-        android:layout_width="fill_parent"
-        android:layout_height="fill_parent"
-        android:visibility="gone"
+    <com.qiang.autofocus.AutoFocusView
         android:id="@+id/HelloOpenCvView"
-        opencv:show_fps="true"
-        opencv:camera_id="any" />
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
 </LinearLayout>
